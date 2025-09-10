@@ -2,6 +2,7 @@ import requests
 import os
 import subprocess
 from bs4 import BeautifulSoup
+import sys
 
 class Section:
     def __init__(self, player_id: str=None, month: str=None, year: str=None, game_date: str=None, game_pk: str=None, pitch_type: str=None, play_id: str=None, group_by: str=None):
@@ -125,7 +126,6 @@ class VideoCompiler:
     # merge downloaded videos
     def merge_videos(self):
         mp4_links = self.get_mp4s()
-        print(mp4_links)
         temp_files = []
 
         try:
@@ -168,11 +168,31 @@ class VideoCompiler:
             if os.path.exists('filelist.txt'):
                 os.remove('filelist.txt')
 
+def valid_url(url):
+    if 'https://baseballsavant.mlb.com/statcast_search' in url:
+        return True
+    return False
+
 if __name__ == "__main__":
+    if len(sys.argv) > 3:
+        print("Too many arguments")
+        sys.exit()
+    elif len(sys.argv) > 2:
+        title = sys.argv[1]
+        url = sys.argv[2]
 
-    url = 'https://baseballsavant.mlb.com/statcast_search?hfPT=&hfAB=home%5C.%5C.run%7C&hfGT=R%7C&hfPR=&hfZ=&hfStadium=&hfBBL=&hfNewZones=&hfPull=&hfC=&hfSea=2025%7C&hfSit=&player_type=batter&hfOuts=&hfOpponent=&pitcher_throws=&batter_stands=&hfSA=&game_date_gt=&game_date_lt=&hfMo=&hfTeam=&home_road=&hfRO=&position=&hfInfield=&hfOutfield=&hfInn=&hfBBT=&batters_lookup%5B%5D=660271&hfFlag=&metric_1=&group_by=name-date&min_pitches=0&min_results=0&min_pas=0&sort_col=pitches&player_event_sort=api_p_release_speed&sort_order=desc#results'
+        if '.mp4' not in title:
+            title += '.mp4'
+    elif len(sys.argv) > 1:
+        title = "merged.mp4"
+        url = sys.argv[1]
+    else:
+        print("No url to compile...")
+        sys.exit()
 
+    if not valid_url(url):
+        print("The url you entered is not valid")
+        sys.exit()
 
-    vc = VideoCompiler(url, 'ohtani_homers.mp4')
+    vc = VideoCompiler(url,title)
     vc.merge_videos()
-
