@@ -72,6 +72,7 @@ class VideoCompiler:
         self.output_path = output_path
         self.search_section_list = [] # all search sections loaded
         self.video_data_list = [] # video metadata
+        self.temp_files = []
 
     # helper function to load page html
     def load_page(self, url):
@@ -115,8 +116,7 @@ class VideoCompiler:
 
     # get all search sections on savant page and their individual video page urls
     def parse_savant_page(self):
-        print("Loading Savant Page...")
-
+        print("Loading BaseballSavant query...")
         soup = self.load_page(self.url)
         table_rows = soup.find_all('tr', class_='search_row default-table-row')
         self.parse_search_rows(table_rows)
@@ -134,38 +134,38 @@ class VideoCompiler:
             video_data.mp4_video_url = mp4_link
 
         print(f"Loading {len(self.video_data_list)} video pages...")
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
             executor.map(get_mp4_link, self.video_data_list)
 
-        print("All mp4 links downloaded")
-
     # download videos from mp4 links
-    def download_video(self, url, filename):
-        response = requests.get(url, stream=True)
-        
-        with open(filename, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    f.write(chunk)
-                    f.flush()
+    def download_videos(self):
+        def download_video(args):
+            i, video_data = args
+            temp_filename = f"temp_video_{i}.mp4"
+
+            response = requests.get(video_data.mp4_video_url, stream=True)
+            
+            with open(temp_filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
+                        f.flush()
+
+            return temp_filename
+
+        print(f"Downloading {len(self.video_data_list)} videos...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
+            tasks = [(i, video_data) for i, video_data in enumerate(self.video_data_list)]
+            self.temp_files = list(executor.map(download_video, tasks))
 
     # merge downloaded videos
     def merge_videos(self):
-        temp_files = []
-
+        print("Merging videos...")
         try:
-            for i,video_data in enumerate(self.video_data_list):
-                temp_filename = f"temp_video_{i}.mp4"
-                temp_files.append(temp_filename)
-                print(f"Downloading video {i+1}...")
-                self.download_video(video_data.mp4_video_url, temp_filename)
-
             filelist = 'filelist.txt'
             with open(filelist, 'w') as f:
-                for temp in temp_files:
-                    f.write(f'file {temp}\n')
-
-            print("Merging videos...")
+                for temp_file in self.temp_files:
+                    f.write(f'file {temp_file}\n')
 
             if self.output_path == None:
                 self.output_path =  './merged.mp4'
@@ -186,7 +186,7 @@ class VideoCompiler:
         except Exception as e:
             print(f"Something went wrong: {e}")
         finally:
-            for temp in temp_files:
+            for temp in self.temp_files:
                 if os.path.exists(temp):
                     os.remove(temp)
 
@@ -222,5 +222,6 @@ if __name__ == "__main__":
     vc = VideoCompiler(url,title)
     vc.parse_savant_page()
     vc.get_mp4s()
+    vc.download_videos()
     vc.merge_videos()
 
