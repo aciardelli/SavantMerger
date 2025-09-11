@@ -4,7 +4,28 @@ import subprocess
 from bs4 import BeautifulSoup
 import sys
 
-class Section:
+class VideoMetadata:
+    def __init__(self, video_page_url: str=None):
+        # video information
+        self.video_page_url = video_page_url
+        self.mp4_video_url = None
+        
+        # event information
+        self.description = None # shohei ohtani homers on a line drive to center field
+        self.count = None # what number
+        self.batter = None # batter name
+        self.pitcher = None # pitcher name
+        self.balls = None # balls in count
+        self.strikes = None # strikes in count
+        self.pitch_type = None # pitch type
+        self.pitch_velo = None # pitch velo
+        self.exit_velo = None # exit velo
+        self.distance = None # hit distance
+        self.num_parks = None # homer in x/30 parks
+        self.matchup = None # team matchup
+        self.date = None # date
+
+class SearchSection:
     def __init__(self, player_id: str=None, month: str=None, year: str=None, game_date: str=None, game_pk: str=None, pitch_type: str=None, play_id: str=None, group_by: str=None):
         self.player_id = player_id
         self.month = month
@@ -15,7 +36,7 @@ class Section:
         self.play_id = play_id
         self.group_by = group_by
 
-    # compile url for 
+    # compile url for
     def compile_url(self, url):
         video_details_url = url[:-8] + '&type=details'
         if self.group_by == 'name' or self.group_by == 'team' or self.group_by == 'venue':
@@ -47,22 +68,19 @@ class VideoCompiler:
     def __init__(self, url: str, output_path: str=None):
         self.url = url
         self.output_path = output_path
-        self.section_list = [] # all search sections loaded
+        self.search_section_list = [] # all search sections loaded
+        self.video_data_list = [] # video metadata
 
-    # helper function to load pages
+    # helper function to load page html
     def load_page(self, url):
         response = requests.get(url)
         html_content = response.text
         soup = BeautifulSoup(html_content, 'html.parser')
         return soup
 
-    # get all search sections on savant page
-    def get_search_sections(self):
-        print("Loading Savant Page...")
-        soup = self.load_page(self.url)
-
-        table_rows = soup.find_all('tr', class_='search_row default-table-row')
-        for row in table_rows:
+    # parses all search section rows
+    def parse_search_rows(self, rows):
+        for row in rows:
             player_id = row.get('data-player-id')
             month = row.get('data-month')
             year = row.get('data-year')
@@ -71,47 +89,48 @@ class VideoCompiler:
             pitch_type = row.get('data-pitch-type')
             play_id = row.get('data-play-id')
             group_by = row.get('data-group-by')
-            section = Section(player_id, month, year, game_date, game_pk, pitch_type, play_id, group_by)
+            search_section = SearchSection(player_id, month, year, game_date, game_pk, pitch_type, play_id, group_by)
+            self.search_section_list.append(search_section)
 
-            self.section_list.append(section)
-
-    # go to each informational video url
-    def get_player_video_pages(self):
-        self.get_search_sections()
-
-        section_video_urls = []
-        for section in self.section_list:
-            compiled_url = section.compile_url(self.url)
+    # get url of each individual video page - mp4 needs to be grabbed from this url
+    def get_video_page_urls(self):
+        search_section_video_urls = []
+        
+        for search_section in self.search_section_list:
+            compiled_url = search_section.compile_url(self.url)
             if compiled_url:
-                section_video_urls.append(compiled_url)
+                search_section_video_urls.append(compiled_url)
 
-        video_urls = []
-        for section_video_url in section_video_urls:
-            soup = self.load_page(section_video_url)
+        for search_section_video_url in search_section_video_urls:
+            soup = self.load_page(search_section_video_url)
             links = soup.find_all('a', href=True)
             for link in links:
                 href = link.get('href')
 
                 # https://baseballsavant.mlb.com/sporty-videos?playId=ffad0706-ee0f-3a44-9c09-3a3d48b9a4e8
                 video_url = 'https://baseballsavant.mlb.com' + href
-                video_urls.append(video_url)
+                self.video_data_list.append(VideoMetadata(video_url))
 
-        return video_urls
+    # get all search sections on savant page and their individual video page urls
+    def parse_savant_page(self):
+        print("Loading Savant Page...")
+
+        soup = self.load_page(self.url)
+        table_rows = soup.find_all('tr', class_='search_row default-table-row')
+        self.parse_search_rows(table_rows)
+
+        self.get_video_page_urls()
 
     # download mp4 links
     def get_mp4s(self):
-        video_pages = self.get_player_video_pages()
-        mp4_links = []
-
-        print(f"Loading {len(video_pages)} video pages...")
-        for video_page in video_pages:
+        print(f"Loading {len(self.video_data_list)} video pages...")
+        for video_data in self.video_data_list:
+            video_page = video_data.video_page_url
             soup = self.load_page(video_page)
 
             video = soup.find('video')
-            mp4 = video.find('source').get('src')
-            mp4_links.append(mp4)
-
-        return mp4_links
+            mp4_link = video.find('source').get('src')
+            video_data.mp4_video_url = mp4_link
 
     # download videos from mp4 links
     def download_video(self, url, filename):
@@ -125,15 +144,14 @@ class VideoCompiler:
 
     # merge downloaded videos
     def merge_videos(self):
-        mp4_links = self.get_mp4s()
         temp_files = []
 
         try:
-            for i,url in enumerate(mp4_links):
-                mp4_str = f"temp_video_{i}.mp4"
-                temp_files.append(mp4_str)
+            for i,video_data in enumerate(self.video_data_list):
+                temp_filename = f"temp_video_{i}.mp4"
+                temp_files.append(temp_filename)
                 print(f"Downloading video {i+1}...")
-                self.download_video(url, mp4_str)
+                self.download_video(video_data.mp4_video_url, temp_filename)
 
             filelist = 'filelist.txt'
             with open(filelist, 'w') as f:
@@ -195,4 +213,7 @@ if __name__ == "__main__":
         sys.exit()
 
     vc = VideoCompiler(url,title)
+    vc.parse_savant_page()
+    vc.get_mp4s()
     vc.merge_videos()
+
