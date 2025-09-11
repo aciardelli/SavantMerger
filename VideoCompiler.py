@@ -3,6 +3,8 @@ import os
 import subprocess
 from bs4 import BeautifulSoup
 import sys
+import threading
+import concurrent.futures
 
 class VideoMetadata:
     def __init__(self, video_page_url: str=None):
@@ -121,16 +123,21 @@ class VideoCompiler:
 
         self.get_video_page_urls()
 
-    # download mp4 links
+    # multithreading to store multiple mp4 links
     def get_mp4s(self):
-        print(f"Loading {len(self.video_data_list)} video pages...")
-        for video_data in self.video_data_list:
+        def get_mp4_link(video_data):
             video_page = video_data.video_page_url
             soup = self.load_page(video_page)
 
-            video = soup.find('video')
-            mp4_link = video.find('source').get('src')
+            video_element = soup.find('video')
+            mp4_link = video_element.find('source').get('src')
             video_data.mp4_video_url = mp4_link
+
+        print(f"Loading {len(self.video_data_list)} video pages...")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            executor.map(get_mp4_link, self.video_data_list)
+
+        print("All mp4 links downloaded")
 
     # download videos from mp4 links
     def download_video(self, url, filename):
