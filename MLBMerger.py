@@ -3,7 +3,6 @@ import os
 import subprocess
 from bs4 import BeautifulSoup
 import sys
-import threading
 import concurrent.futures
 
 class VideoMetadata:
@@ -66,7 +65,7 @@ class SearchSection:
 
         return video_details_url
 
-class VideoCompiler:
+class MLBMerger:
     def __init__(self, url: str, output_path: str=None):
         self.url = url
         self.output_path = output_path
@@ -219,9 +218,8 @@ if __name__ == "__main__":
         print("The url you entered is not valid")
         sys.exit()
 
-    vc = VideoCompiler(url,title)
-    vc.parse_savant_page()
-    vc.get_mp4s()
-    vc.download_videos()
-    vc.merge_videos()
-
+    mm = MLBMerger(url,title)
+    mm.parse_savant_page()
+    mm.get_mp4s()
+    mm.download_videos()
+    mm.merge_videos()
