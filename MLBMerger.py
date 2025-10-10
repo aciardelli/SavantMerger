@@ -4,6 +4,7 @@ import subprocess
 from bs4 import BeautifulSoup
 import sys
 import concurrent.futures
+import argparse
 
 class VideoMetadata:
     def __init__(self, video_page_url: str=None):
@@ -198,25 +199,28 @@ def valid_url(url):
     return False
 
 if __name__ == "__main__":
-    if len(sys.argv) > 3:
-        print("Too many arguments")
-        sys.exit()
-    elif len(sys.argv) > 2:
-        title = sys.argv[1]
-        url = sys.argv[2]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-u", "--url", help="BaseballSavant query url", type=str)
+    parser.add_argument("-o", "--output", help="Video output name", type=str)
+    args = parser.parse_args()
 
-        if '.mp4' not in title:
-            title += '.mp4'
-    elif len(sys.argv) > 1:
-        title = "merged.mp4"
-        url = sys.argv[1]
-    else:
+    url = args.url
+    title = args.output
+
+    if not url:
         print("No url to compile...")
         sys.exit()
-
     if not valid_url(url):
         print("The url you entered is not valid")
         sys.exit()
+
+    if title:
+        if '.mp4' not in title:
+            title += '.mp4'
+        
+    if not args.output:
+        print("Default output name of merged.mp4")
+        title = "merged.mp4"
 
     mm = MLBMerger(url,title)
     mm.parse_savant_page()
