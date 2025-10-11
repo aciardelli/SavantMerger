@@ -27,6 +27,36 @@ class VideoMetadata:
         self.matchup = None # team matchup
         self.date = None # date
 
+        self.description_map = {
+            'Batter:': self.batter,
+            'Pitcher:': self.pitcher,
+            'Count:': self.count,
+            'Pitch Type:': self.pitch_type,
+            'Velocity:': self.pitch_velo,
+            'Exit Velocity:': self.exit_velo,
+            'Hit Distance:': self.distance,
+            'HR:': self.num_parks,
+            'Matchup:': self.matchup,
+            'Date:': self.date
+        }
+
+    def get_video_data(self, soup):
+        data_list = soup.find('div', class_='mod')
+        if data_list:
+            data_list_items = data_list.find_all('li')
+            for data_list_item in data_list_items:
+                self.parse_data_list(data_list_item)
+
+    def parse_data_list(self, data_list_item):
+        description = data_list_item.find('strong').get_text(strip=True)
+        full_text = data_list_item.get_text(strip=True)
+        other_text = full_text.replace(description, '').strip()
+        if description in self.description_map:
+            self.description_map[description] = other_text
+
+    def print_data_list(self):
+        print(self.description_map)
+
 class SearchSection:
     def __init__(self, player_id: str=None, month: str=None, year: str=None, game_date: str=None, game_pk: str=None, pitch_type: str=None, play_id: str=None, group_by: str=None):
         self.player_id = player_id
@@ -128,6 +158,9 @@ class MLBMerger:
         def get_mp4_link(video_data):
             video_page = video_data.video_page_url
             soup = self.load_page(video_page)
+            
+            # parse metadata
+            video_data.get_video_data(soup)
 
             video_element = soup.find('video')
             mp4_link = video_element.find('source').get('src')
