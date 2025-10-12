@@ -5,9 +5,10 @@ from bs4 import BeautifulSoup
 import sys
 import concurrent.futures
 import argparse
+from typing import Optional
 
 class VideoMetadata:
-    def __init__(self, video_page_url: str=None):
+    def __init__(self, video_page_url: Optional[str]=None):
         # video information
         self.video_page_url = video_page_url
         self.mp4_video_url = None
@@ -58,7 +59,7 @@ class VideoMetadata:
         print(self.description_map)
 
 class SearchSection:
-    def __init__(self, player_id: str=None, month: str=None, year: str=None, game_date: str=None, game_pk: str=None, pitch_type: str=None, play_id: str=None, group_by: str=None):
+    def __init__(self, player_id: Optional[str]=None, month: Optional[str]=None, year: Optional[str]=None, game_date: Optional[str]=None, game_pk: Optional[str]=None, pitch_type: Optional[str]=None, play_id: Optional[str]=None, group_by: Optional[str]=None):
         self.player_id = player_id
         self.month = month
         self.year = year
@@ -97,7 +98,7 @@ class SearchSection:
         return video_details_url
 
 class MLBMerger:
-    def __init__(self, url: str, output_path: str=None):
+    def __init__(self, url: str, output_path: Optional[str]=None):
         self.url = url
         self.output_path = output_path
         self.search_section_list = [] # all search sections loaded
