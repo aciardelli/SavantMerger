@@ -7,6 +7,7 @@ import concurrent.futures
 import argparse
 from typing import Optional
 from dataclasses import dataclass
+import logging
 
 # Metadata From Video Page
 @dataclass
@@ -150,7 +151,7 @@ class SavantMerger:
 
     # get all search sections on savant page and their individual video page urls
     def parse_savant_page(self):
-        print("Loading BaseballSavant query...")
+        logging.info("Loading BaseballSavant query...")
         soup = self.load_page(self.url)
         table_rows = soup.find_all('tr', class_='search_row default-table-row')
         self.parse_search_rows(table_rows)
@@ -173,7 +174,7 @@ class SavantMerger:
                     mp4_link = source_element.get('src')
                     video_data.mp4_video_url = str(mp4_link) if mp4_link else None
 
-        print(f"Loading {len(self.video_data_list)} video pages...")
+        logging.info(f"Loading {len(self.video_data_list)} video pages...")
         with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
             executor.map(get_mp4_link, self.video_data_list)
 
@@ -193,14 +194,14 @@ class SavantMerger:
 
             return temp_filename
 
-        print(f"Downloading {len(self.video_data_list)} videos...")
+        logging.info(f"Downloading {len(self.video_data_list)} videos...")
         with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
             tasks = [(i, video_data) for i, video_data in enumerate(self.video_data_list)]
             self.temp_files = list(executor.map(download_video, tasks))
 
     # merge downloaded videos
     def merge_videos(self):
-        print("Merging videos...")
+        logging.info("Merging videos...")
         try:
             filelist = 'filelist.txt'
             with open(filelist, 'w') as f:
@@ -224,7 +225,7 @@ class SavantMerger:
             print(f"Merged video saved as: {self.output_path}")
 
         except Exception as e:
-            print(f"Something went wrong: {e}")
+            logging.error(f"Something went wrong: {e}")
         finally:
             for temp in self.temp_files:
                 if os.path.exists(temp):
@@ -242,7 +243,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-u", "--url", help="BaseballSavant query url", type=str)
     parser.add_argument("-o", "--output", help="Video output name", type=str)
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
     args = parser.parse_args()
+    
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    else:
+        logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 
     url = args.url
     title = args.output
