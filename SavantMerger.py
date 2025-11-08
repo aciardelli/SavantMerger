@@ -6,40 +6,27 @@ import sys
 import concurrent.futures
 import argparse
 from typing import Optional
+from dataclasses import dataclass
 
+# Metadata From Video Page
+@dataclass
 class VideoMetadata:
-    def __init__(self, video_page_url: Optional[str]=None):
-        # video information
-        self.video_page_url = video_page_url
-        self.mp4_video_url = None
-        
-        # event information
-        self.description = None # shohei ohtani homers on a line drive to center field
-        self.count = None # what number
-        self.batter = None # batter name
-        self.pitcher = None # pitcher name
-        self.balls = None # balls in count
-        self.strikes = None # strikes in count
-        self.pitch_type = None # pitch type
-        self.pitch_velo = None # pitch velo
-        self.exit_velo = None # exit velo
-        self.distance = None # hit distance
-        self.num_parks = None # homer in x/30 parks
-        self.matchup = None # team matchup
-        self.date = None # date
-
-        self.description_map = {
-            'Batter:': self.batter,
-            'Pitcher:': self.pitcher,
-            'Count:': self.count,
-            'Pitch Type:': self.pitch_type,
-            'Velocity:': self.pitch_velo,
-            'Exit Velocity:': self.exit_velo,
-            'Hit Distance:': self.distance,
-            'HR:': self.num_parks,
-            'Matchup:': self.matchup,
-            'Date:': self.date
-        }
+    video_page_url: str
+    mp4_video_url: Optional[str] = None
+    
+    description: Optional[str] = None
+    count: Optional[str] = None
+    batter: Optional[str] = None
+    pitcher: Optional[str] = None # pitcher name
+    balls: Optional[str] = None # balls in count
+    strikes: Optional[str] = None # strikes in count
+    pitch_type: Optional[str] = None # pitch type
+    pitch_velo: Optional[str] = None # pitch velo
+    exit_velo: Optional[str] = None # exit velo
+    distance: Optional[str] = None # hit distance
+    num_parks: Optional[str] = None # homer in x/30 parks
+    matchup: Optional[str] = None # team matchup
+    date: Optional[str] = None # date
 
     def get_video_data(self, soup):
         data_list = soup.find('div', class_='mod')
@@ -49,54 +36,42 @@ class VideoMetadata:
                 self.parse_data_list(data_list_item)
 
     def parse_data_list(self, data_list_item):
-        description = data_list_item.find('strong').get_text(strip=True)
-        full_text = data_list_item.get_text(strip=True)
-        other_text = full_text.replace(description, '').strip()
-        if description in self.description_map:
-            self.description_map[description] = other_text
+        description_map = {
+            'Batter:': 'batter',
+            'Pitcher:': 'pitcher',
+            'Count:': 'count',
+            'Pitch Type:': 'pitch_type',
+            'Velocity:': 'pitch_velo',
+            'Exit Velocity:': 'exit_velo',
+            'Hit Distance:': 'distance',
+            'HR:': 'num_parks',
+            'Matchup:': 'matchup',
+            'Date:': 'date'
+        }
+        
+        strong_element = data_list_item.find('strong')
+        if strong_element:
+            description = strong_element.get_text(strip=True)
+            full_text = data_list_item.get_text(strip=True)
+            other_text = full_text.replace(description, '').strip()
+            
+            if description in description_map:
+                field_name = description_map[description]
+                setattr(self, field_name, other_text)
 
-    def print_data_list(self):
-        print(self.description_map)
-
+# Savant Search Section
+@dataclass
 class SearchSection:
-    def __init__(self, player_id: Optional[str]=None, month: Optional[str]=None, year: Optional[str]=None, game_date: Optional[str]=None, game_pk: Optional[str]=None, pitch_type: Optional[str]=None, play_id: Optional[str]=None, group_by: Optional[str]=None):
-        self.player_id = player_id
-        self.month = month
-        self.year = year
-        self.game_date = game_date
-        self.game_pk = game_pk
-        self.pitch_type = pitch_type
-        self.play_id = play_id
-        self.group_by = group_by
+    player_id: Optional[str] = None
+    month: Optional[str] = None
+    year: Optional[str] = None
+    game_date: Optional[str] = None
+    game_pk: Optional[str] = None
+    pitch_type: Optional[str] = None
+    play_id: Optional[str] = None
+    group_by: Optional[str] = None
 
-    # compile url for
-    def compile_url(self, url):
-        video_details_url = url[:-8] + '&type=details'
-        if self.group_by == 'name' or self.group_by == 'team' or self.group_by == 'venue':
-            video_details_url += f'&player_id={self.player_id}'
-
-        elif self.group_by == 'name-date' or self.group_by == 'team-date':
-            video_details_url += f'&player_id={self.player_id}&ep_game_date={self.game_date}&ep_game_pk={self.game_pk}'
-
-        elif self.group_by == 'name-month' or self.group_by == 'team-month':
-            video_details_url += f'&player_id={self.player_id}&ep_game_month={self.month}'
-
-        elif self.group_by == 'name-month-year' or self.group_by == 'team-month-year':
-            video_details_url += f'&player_id={self.player_id}&ep_game_month={self.month}&ep_game_year={self.year}'
-
-        elif self.group_by == 'name-year' or self.group_by == 'team-year':
-            video_details_url += f'&player_id={self.player_id}&ep_game_year={self.year}'
-
-        elif self.group_by == 'name-event' or self.group_by == 'team-event':
-            video_details_url += f'&player_id={self.player_id}&play_guid={self.play_id}'
-
-        elif self.group_by == 'pitch-type' or self.group_by == 'team-pitch-type':
-            video_details_url += f'&player_id={self.player_id}&ep_pitch_type={self.pitch_type}'
-        else:
-            return None
-
-        return video_details_url
-
+############ MERGER ############
 class SavantMerger:
     def __init__(self, url: str, output_path: Optional[str]=None):
         self.url = url
@@ -126,12 +101,40 @@ class SavantMerger:
             search_section = SearchSection(player_id, month, year, game_date, game_pk, pitch_type, play_id, group_by)
             self.search_section_list.append(search_section)
 
+    # compile url
+    def compile_url(self, url: str, savant_section: SearchSection):
+        video_details_url = url[:-8] + '&type=details'
+        if savant_section.group_by == 'name' or savant_section.group_by == 'team' or savant_section.group_by == 'venue':
+            video_details_url += f'&player_id={savant_section.player_id}'
+
+        elif savant_section.group_by == 'name-date' or savant_section.group_by == 'team-date':
+            video_details_url += f'&player_id={savant_section.player_id}&ep_game_date={savant_section.game_date}&ep_game_pk={savant_section.game_pk}'
+
+        elif savant_section.group_by == 'name-month' or savant_section.group_by == 'team-month':
+            video_details_url += f'&player_id={savant_section.player_id}&ep_game_month={savant_section.month}'
+
+        elif savant_section.group_by == 'name-month-year' or savant_section.group_by == 'team-month-year':
+            video_details_url += f'&player_id={savant_section.player_id}&ep_game_month={savant_section.month}&ep_game_year={savant_section.year}'
+
+        elif savant_section.group_by == 'name-year' or savant_section.group_by == 'team-year':
+            video_details_url += f'&player_id={savant_section.player_id}&ep_game_year={savant_section.year}'
+
+        elif savant_section.group_by == 'name-event' or savant_section.group_by == 'team-event':
+            video_details_url += f'&player_id={savant_section.player_id}&play_guid={savant_section.play_id}'
+
+        elif savant_section.group_by == 'pitch-type' or savant_section.group_by == 'team-pitch-type':
+            video_details_url += f'&player_id={savant_section.player_id}&ep_pitch_type={savant_section.pitch_type}'
+        else:
+            return None
+
+        return video_details_url
+
     # get url of each individual video page - mp4 needs to be grabbed from this url
     def get_video_page_urls(self):
         search_section_video_urls = []
         
         for search_section in self.search_section_list:
-            compiled_url = search_section.compile_url(self.url)
+            compiled_url = self.compile_url(self.url, search_section)
             if compiled_url:
                 search_section_video_urls.append(compiled_url)
 
@@ -140,10 +143,10 @@ class SavantMerger:
             links = soup.find_all('a', href=True)
             for link in links:
                 href = link.get('href')
-
-                # https://baseballsavant.mlb.com/sporty-videos?playId=ffad0706-ee0f-3a44-9c09-3a3d48b9a4e8
-                video_url = 'https://baseballsavant.mlb.com' + href
-                self.video_data_list.append(VideoMetadata(video_url))
+                if href:
+                    # https://baseballsavant.mlb.com/sporty-videos?playId=ffad0706-ee0f-3a44-9c09-3a3d48b9a4e8
+                    video_url = 'https://baseballsavant.mlb.com' + str(href)
+                    self.video_data_list.append(VideoMetadata(video_page_url=video_url))
 
     # get all search sections on savant page and their individual video page urls
     def parse_savant_page(self):
@@ -164,8 +167,11 @@ class SavantMerger:
             video_data.get_video_data(soup)
 
             video_element = soup.find('video')
-            mp4_link = video_element.find('source').get('src')
-            video_data.mp4_video_url = mp4_link
+            if video_element:
+                source_element = video_element.find('source')
+                if source_element:
+                    mp4_link = source_element.get('src')
+                    video_data.mp4_video_url = str(mp4_link) if mp4_link else None
 
         print(f"Loading {len(self.video_data_list)} video pages...")
         with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
