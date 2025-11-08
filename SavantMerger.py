@@ -9,6 +9,11 @@ from typing import Optional
 from dataclasses import dataclass
 import logging
 
+# constants
+BASE_URL = 'https://baseballsavant.mlb.com'
+MAX_WORKERS = 4
+DEFAULT_OUTPUT = 'merged.mp4'
+
 # Metadata From Video Page
 @dataclass
 class VideoMetadata:
@@ -29,6 +34,21 @@ class VideoMetadata:
     matchup: Optional[str] = None # team matchup
     date: Optional[str] = None # date
 
+    # const
+    DESCRIPTION_MAP = {
+        'Batter:': 'batter',
+        'Pitcher:': 'pitcher',
+        'Count:': 'count',
+        'Pitch Type:': 'pitch_type',
+        'Velocity:': 'pitch_velo',
+        'Exit Velocity:': 'exit_velo',
+        'Hit Distance:': 'distance',
+        'HR:': 'num_parks',
+        'Matchup:': 'matchup',
+        'Date:': 'date'
+    }
+        
+
     def get_video_data(self, soup):
         data_list = soup.find('div', class_='mod')
         if data_list:
@@ -37,27 +57,14 @@ class VideoMetadata:
                 self.parse_data_list(data_list_item)
 
     def parse_data_list(self, data_list_item):
-        description_map = {
-            'Batter:': 'batter',
-            'Pitcher:': 'pitcher',
-            'Count:': 'count',
-            'Pitch Type:': 'pitch_type',
-            'Velocity:': 'pitch_velo',
-            'Exit Velocity:': 'exit_velo',
-            'Hit Distance:': 'distance',
-            'HR:': 'num_parks',
-            'Matchup:': 'matchup',
-            'Date:': 'date'
-        }
-        
         strong_element = data_list_item.find('strong')
         if strong_element:
             description = strong_element.get_text(strip=True)
             full_text = data_list_item.get_text(strip=True)
             other_text = full_text.replace(description, '').strip()
             
-            if description in description_map:
-                field_name = description_map[description]
+            if description in self.DESCRIPTION_MAP:
+                field_name = self.DESCRIPTION_MAP[description]
                 setattr(self, field_name, other_text)
 
 # Savant Search Section
@@ -146,7 +153,7 @@ class SavantMerger:
                 href = link.get('href')
                 if href:
                     # https://baseballsavant.mlb.com/sporty-videos?playId=ffad0706-ee0f-3a44-9c09-3a3d48b9a4e8
-                    video_url = 'https://baseballsavant.mlb.com' + str(href)
+                    video_url = BASE_URL + str(href)
                     self.video_data_list.append(VideoMetadata(video_page_url=video_url))
 
     # get all search sections on savant page and their individual video page urls
@@ -175,7 +182,7 @@ class SavantMerger:
                     video_data.mp4_video_url = str(mp4_link) if mp4_link else None
 
         logging.info(f"Loading {len(self.video_data_list)} video pages...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
             executor.map(get_mp4_link, self.video_data_list)
 
     # download videos from mp4 links
@@ -195,7 +202,7 @@ class SavantMerger:
             return temp_filename
 
         logging.info(f"Downloading {len(self.video_data_list)} videos...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers = 4) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
             tasks = [(i, video_data) for i, video_data in enumerate(self.video_data_list)]
             self.temp_files = list(executor.map(download_video, tasks))
 
@@ -267,7 +274,7 @@ if __name__ == "__main__":
         
     if not args.output:
         print("Default output name of merged.mp4")
-        title = "merged.mp4"
+        title = DEFAULT_OUTPUT
 
     sm = SavantMerger(url,title)
     sm.parse_savant_page()
