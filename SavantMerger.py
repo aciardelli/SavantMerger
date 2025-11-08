@@ -97,7 +97,7 @@ class SearchSection:
 
         return video_details_url
 
-class MLBMerger:
+class SavantMerger:
     def __init__(self, url: str, output_path: Optional[str]=None):
         self.url = url
         self.output_path = output_path
@@ -256,8 +256,8 @@ if __name__ == "__main__":
         print("Default output name of merged.mp4")
         title = "merged.mp4"
 
-    mm = MLBMerger(url,title)
-    mm.parse_savant_page()
-    mm.get_mp4s()
-    mm.download_videos()
-    mm.merge_videos()
+    sm = SavantMerger(url,title)
+    sm.parse_savant_page()
+    sm.get_mp4s()
+    sm.download_videos()
+    sm.merge_videos()
