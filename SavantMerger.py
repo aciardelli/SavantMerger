@@ -90,10 +90,18 @@ class SavantMerger:
 
     # helper function to load page html
     def load_page(self, url):
-        response = requests.get(url)
-        html_content = response.text
-        soup = BeautifulSoup(html_content, 'html.parser')
-        return soup
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            html_content = response.text
+            soup = BeautifulSoup(html_content, 'html.parser')
+            return soup
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Failed to load page {url}: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"Unexpected error loading {url}: {e}")
+            return None
 
     # parses all search section rows
     def parse_search_rows(self, rows):
@@ -148,6 +156,9 @@ class SavantMerger:
 
         for search_section_video_url in search_section_video_urls:
             soup = self.load_page(search_section_video_url)
+            if soup is None:
+                logging.warning(f"Skipping failed page: {search_section_video_url}")
+                continue
             links = soup.find_all('a', href=True)
             for link in links:
                 href = link.get('href')
@@ -160,30 +171,74 @@ class SavantMerger:
     def parse_savant_page(self):
         logging.info("Loading BaseballSavant query...")
         soup = self.load_page(self.url)
+        if soup is None:
+            raise RuntimeError(f"Failed to load main Baseball Savant page: {self.url}")
+
         table_rows = soup.find_all('tr', class_='search_row default-table-row')
+        if not table_rows:
+            logging.warning("No search result rows found")
+            return
+        
         self.parse_search_rows(table_rows)
+        if not self.search_section_list:
+            logging.warning("No valid search sections parsed")
+            return
+
+        logging.info(f"Parsed {len(self.search_section_list)} search sections")
 
         self.get_video_page_urls()
+        if not self.video_data_list:
+            logging.warning(f"No video URLs found")
+            return
+
+        logging.info(f"Found {len(self.video_data_list)} video URLs")
 
     # multithreading to store multiple mp4 links
     def get_mp4s(self):
         def get_mp4_link(video_data):
-            video_page = video_data.video_page_url
-            soup = self.load_page(video_page)
-            
-            # parse metadata
-            video_data.get_video_data(soup)
+            try:
+                video_page = video_data.video_page_url
+                soup = self.load_page(video_page)
+                if soup is None:
+                    logging.warning(f"Failed to load video page: {video_page}")
+                    return False
+                
+                # parse metadata
+                video_data.get_video_data(soup)
 
-            video_element = soup.find('video')
-            if video_element:
+                video_element = soup.find('video')
+                if not video_element:
+                    logging.warning(f"No video element found on page: {video_page}")
+                    return False
+
                 source_element = video_element.find('source')
-                if source_element:
-                    mp4_link = source_element.get('src')
-                    video_data.mp4_video_url = str(mp4_link) if mp4_link else None
+                if not source_element:
+                    logging.warning(f"No source element found on page: {video_page}")
+                    return False
+
+                mp4_link = source_element.get('src')
+                if not mp4_link:
+                    logging.warning(f"No mp4 link found on page: {video_page}")
+                    return False
+
+                video_data.mp4_video_url = str(mp4_link) if mp4_link else None
+                return True
+            except Exception as e:
+                logging.error(f"Error processing video: {video_data.video_page_url}: {e}")
+                return False
 
         logging.info(f"Loading {len(self.video_data_list)} video pages...")
         with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
             executor.map(get_mp4_link, self.video_data_list)
+
+        valid_videos = [v for v in self.video_data_list if v.mp4_video_url]
+        failed_count = len(self.video_data_list) - len(valid_videos)
+
+        if failed_count > 0:
+            logging.warning(f"{failed_count} videos failed to get mp4 urls")
+
+        self.video_data_list = valid_videos
+        logging.info(f"{len(self.video_data_list)} videos ready for download")
 
     # download videos from mp4 links
     def download_videos(self):
