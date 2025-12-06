@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 import sys
 import concurrent.futures
 import argparse
-from typing import Optional
+from typing import Optional, List
 from dataclasses import dataclass
 import logging
 
@@ -48,7 +48,6 @@ class VideoMetadata:
         'Date:': 'date'
     }
         
-
     def get_video_data(self, soup):
         data_list = soup.find('div', class_='mod')
         if data_list:
@@ -79,14 +78,12 @@ class SearchSection:
     play_id: Optional[str] = None
     group_by: Optional[str] = None
 
-############ MERGER ############
-class SavantMerger:
-    def __init__(self, url: str, output_path: Optional[str]=None):
+############ SCRAPER ############
+class SavantScraper:
+    def __init__(self, url: str):
         self.url = url
-        self.output_path = output_path
         self.search_section_list = [] # all search sections loaded
         self.video_data_list = [] # video metadata
-        self.temp_files = []
 
     # helper function to load page html
     def load_page(self, url):
@@ -156,7 +153,7 @@ class SavantMerger:
 
         for search_section_video_url in search_section_video_urls:
             soup = self.load_page(search_section_video_url)
-            if soup is None:
+            if soup == None:
                 logging.warning(f"Skipping failed page: {search_section_video_url}")
                 continue
             links = soup.find_all('a', href=True)
@@ -171,7 +168,7 @@ class SavantMerger:
     def parse_savant_page(self):
         logging.info("Loading BaseballSavant query...")
         soup = self.load_page(self.url)
-        if soup is None:
+        if soup == None:
             raise RuntimeError(f"Failed to load main Baseball Savant page: {self.url}")
 
         table_rows = soup.find_all('tr', class_='search_row default-table-row')
@@ -194,12 +191,12 @@ class SavantMerger:
         logging.info(f"Found {len(self.video_data_list)} video URLs")
 
     # multithreading to store multiple mp4 links
-    def get_mp4s(self):
+    def get_mp4_links(self):
         def get_mp4_link(video_data):
             try:
                 video_page = video_data.video_page_url
                 soup = self.load_page(video_page)
-                if soup is None:
+                if soup == None:
                     logging.warning(f"Failed to load video page: {video_page}")
                     return False
                 
@@ -239,6 +236,13 @@ class SavantMerger:
 
         self.video_data_list = valid_videos
         logging.info(f"{len(self.video_data_list)} videos ready for download")
+
+############ MERGER ############
+class SavantMerger:
+    def __init__(self, video_data_list: List[VideoMetadata], output_path: Optional[str]=None):
+        self.output_path = output_path
+        self.video_data_list = video_data_list
+        self.temp_files = []
 
     # download videos from mp4 links
     def download_videos(self):
@@ -296,8 +300,8 @@ class SavantMerger:
             if os.path.exists('filelist.txt'):
                 os.remove('filelist.txt')
 
-def valid_url(url):
-    if 'https://baseballsavant.mlb.com/statcast_search' in url:
+def check_url(url):
+    if url.startswith('https://baseballsavant.mlb.com/statcast_search'):
         return True
     return False
 
@@ -319,7 +323,7 @@ if __name__ == "__main__":
     if not url:
         print("No url to compile...")
         sys.exit()
-    if not valid_url(url):
+    if not check_url(url):
         print("The url you entered is not valid")
         sys.exit()
 
@@ -331,8 +335,10 @@ if __name__ == "__main__":
         print("Default output name of merged.mp4")
         title = DEFAULT_OUTPUT
 
-    sm = SavantMerger(url,title)
-    sm.parse_savant_page()
-    sm.get_mp4s()
+    ss = SavantScraper(url)
+    ss.parse_savant_page()
+    ss.get_mp4_links()
+
+    sm = SavantMerger(ss.video_data_list, title)
     sm.download_videos()
     sm.merge_videos()
