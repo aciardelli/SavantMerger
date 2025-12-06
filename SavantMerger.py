@@ -228,6 +228,9 @@ class SavantScraper:
         self.video_data_list = valid_videos
         logging.info(f"{len(self.video_data_list)} videos ready for download")
 
+        # makes videos chronological - TODO make a function for this
+        self.video_data_list = self.video_data_list[::-1]
+
 ############ MERGER ############
 class SavantMerger:
     def __init__(self, video_data_list: List[VideoMetadata], output_path: Optional[str]=None):
