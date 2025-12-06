@@ -117,30 +117,21 @@ class SavantScraper:
     # compile url
     def compile_url(self, url: str, savant_section: SearchSection):
         video_details_url = url[:-8] + '&type=details'
-        if savant_section.group_by == 'name' or savant_section.group_by == 'team' or savant_section.group_by == 'venue':
-            video_details_url += f'&player_id={savant_section.player_id}'
+        GROUP_BY_PARAMS = {
+            ('name', 'team', 'venue'): f'&player_id={savant_section.player_id}',
+            ('name-date', 'team-date'): f'&player_id={savant_section.player_id}&ep_game_date={savant_section.game_date}&ep_game_pk={savant_section.game_pk}',
+            ('name-month', 'team-month'): f'&player_id={savant_section.player_id}&ep_game_month={savant_section.month}',
+            ('name-year', 'team-year'): f'&player_id={savant_section.player_id}&ep_game_year={savant_section.year}',
+            ('name-month-year', 'team-month-year'): f'&player_id={savant_section.player_id}&ep_game_month={savant_section.month}&ep_game_year={savant_section.year}',
+            ('name-event', 'team-event'): f'&player_id={savant_section.player_id}&play_guid={savant_section.play_id}',
+            ('pitch-type', 'team-pitch-type'): f'&player_id={savant_section.player_id}&ep_pitch_type={savant_section.pitch_type}'
+        }
 
-        elif savant_section.group_by == 'name-date' or savant_section.group_by == 'team-date':
-            video_details_url += f'&player_id={savant_section.player_id}&ep_game_date={savant_section.game_date}&ep_game_pk={savant_section.game_pk}'
-
-        elif savant_section.group_by == 'name-month' or savant_section.group_by == 'team-month':
-            video_details_url += f'&player_id={savant_section.player_id}&ep_game_month={savant_section.month}'
-
-        elif savant_section.group_by == 'name-month-year' or savant_section.group_by == 'team-month-year':
-            video_details_url += f'&player_id={savant_section.player_id}&ep_game_month={savant_section.month}&ep_game_year={savant_section.year}'
-
-        elif savant_section.group_by == 'name-year' or savant_section.group_by == 'team-year':
-            video_details_url += f'&player_id={savant_section.player_id}&ep_game_year={savant_section.year}'
-
-        elif savant_section.group_by == 'name-event' or savant_section.group_by == 'team-event':
-            video_details_url += f'&player_id={savant_section.player_id}&play_guid={savant_section.play_id}'
-
-        elif savant_section.group_by == 'pitch-type' or savant_section.group_by == 'team-pitch-type':
-            video_details_url += f'&player_id={savant_section.player_id}&ep_pitch_type={savant_section.pitch_type}'
-        else:
-            return None
-
-        return video_details_url
+        for group_types, params in GROUP_BY_PARAMS.items():
+            if savant_section.group_by in group_types:
+                return video_details_url + params
+        
+        return None
 
     # get url of each individual video page - mp4 needs to be grabbed from this url
     def get_video_page_urls(self):
