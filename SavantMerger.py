@@ -1,13 +1,14 @@
-import requests
 import os
 import subprocess
 from bs4 import BeautifulSoup
 import sys
-import concurrent.futures
 import argparse
 from typing import Optional, List
 from dataclasses import dataclass
 import logging
+import asyncio
+import aiofiles
+import aiohttp
 
 # constants
 BASE_URL = 'https://baseballsavant.mlb.com'
@@ -85,21 +86,20 @@ class SavantScraper:
         self.search_section_list = [] # all search sections loaded
         self.video_data_list = [] # video metadata
 
-    # helper function to load page html
-    def load_page(self, url):
+    async def load_page(self, session, url):
         try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            html_content = response.text
-            soup = BeautifulSoup(html_content, 'html.parser')
-            return soup
-        except requests.exceptions.RequestException as e:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                response.raise_for_status()
+                html_content = await response.text()
+                soup = BeautifulSoup(html_content, 'html.parser')
+                return soup
+        except aiohttp.ClientError as e:
             logging.error(f"Failed to load page {url}: {e}")
             return None
         except Exception as e:
             logging.error(f"Unexpected error loading {url}: {e}")
             return None
-
+                
     # parses all search section rows
     def parse_search_rows(self, rows):
         for row in rows:
@@ -134,7 +134,7 @@ class SavantScraper:
         return None
 
     # get url of each individual video page - mp4 needs to be grabbed from this url
-    def get_video_page_urls(self):
+    async def get_video_page_urls(self, session):
         search_section_video_urls = []
         
         for search_section in self.search_section_list:
@@ -143,7 +143,7 @@ class SavantScraper:
                 search_section_video_urls.append(compiled_url)
 
         for search_section_video_url in search_section_video_urls:
-            soup = self.load_page(search_section_video_url)
+            soup = await self.load_page(session, search_section_video_url)
             if soup == None:
                 logging.warning(f"Skipping failed page: {search_section_video_url}")
                 continue
@@ -156,9 +156,9 @@ class SavantScraper:
                     self.video_data_list.append(VideoMetadata(video_page_url=video_url))
 
     # get all search sections on savant page and their individual video page urls
-    def parse_savant_page(self):
+    async def parse_savant_page(self, session):
         logging.info("Loading BaseballSavant query...")
-        soup = self.load_page(self.url)
+        soup = await self.load_page(session, self.url)
         if soup == None:
             raise RuntimeError(f"Failed to load main Baseball Savant page: {self.url}")
 
@@ -174,19 +174,19 @@ class SavantScraper:
 
         logging.info(f"Parsed {len(self.search_section_list)} search sections")
 
-        self.get_video_page_urls()
+        await self.get_video_page_urls(session)
         if not self.video_data_list:
             logging.warning(f"No video URLs found")
             return
 
         logging.info(f"Found {len(self.video_data_list)} video URLs")
 
-    # multithreading to store multiple mp4 links
-    def get_mp4_links(self):
-        def get_mp4_link(video_data):
+    # asyncio to store multiple mp4 links
+    async def get_mp4_links(self, session):
+        async def fetch_mp4_link(session, video_data):
             try:
                 video_page = video_data.video_page_url
-                soup = self.load_page(video_page)
+                soup = await self.load_page(session, video_page)
                 if soup == None:
                     logging.warning(f"Failed to load video page: {video_page}")
                     return False
@@ -216,8 +216,8 @@ class SavantScraper:
                 return False
 
         logging.info(f"Loading {len(self.video_data_list)} video pages...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
-            executor.map(get_mp4_link, self.video_data_list)
+        tasks = [fetch_mp4_link(session, video_data) for video_data in self.video_data_list]
+        await asyncio.gather(*tasks)
 
         valid_videos = [v for v in self.video_data_list if v.mp4_video_url]
         failed_count = len(self.video_data_list) - len(valid_videos)
@@ -239,25 +239,28 @@ class SavantMerger:
         self.temp_files = []
 
     # download videos from mp4 links
-    def download_videos(self):
-        def download_video(args):
-            i, video_data = args
+    async def download_videos(self, session):
+        async def download_video(session, i, video_data):
             temp_filename = f"temp_video_{i}.mp4"
+            # logging.info("Downloading video:", i)
+            try:
+                async with session.get(video_data.mp4_video_url) as response: 
+                    response.raise_for_status()
+                    async with aiofiles.open(temp_filename, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(262144):
+                            await f.write(chunk)
+                            # f.flush()
 
-            response = requests.get(video_data.mp4_video_url, stream=True)
-            
-            with open(temp_filename, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=1024):
-                    if chunk:
-                        f.write(chunk)
-                        f.flush()
-
-            return temp_filename
+                return temp_filename
+            except Exception as e:
+                logging.error(f"Failed to download {video_data.mp4_video_url}: {e}")
+                return None
 
         logging.info(f"Downloading {len(self.video_data_list)} videos...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
-            tasks = [(i, video_data) for i, video_data in enumerate(self.video_data_list)]
-            self.temp_files = list(executor.map(download_video, tasks))
+        tasks = [download_video(session, i, video_data) for i, video_data in enumerate(self.video_data_list)]
+        self.temp_files = await asyncio.gather(*tasks)
+
+        self.temp_files = [f for f in self.temp_files if f is not None]
 
     # merge downloaded videos
     def merge_videos(self):
@@ -329,10 +332,14 @@ if __name__ == "__main__":
         print("Default output name of merged.mp4")
         title = DEFAULT_OUTPUT
 
-    ss = SavantScraper(url)
-    ss.parse_savant_page()
-    ss.get_mp4_links()
+    async def main():
+        async with aiohttp.ClientSession() as session:
+            ss = SavantScraper(url)
+            await ss.parse_savant_page(session)
+            await ss.get_mp4_links(session)
 
-    sm = SavantMerger(ss.video_data_list, title)
-    sm.download_videos()
-    sm.merge_videos()
+            sm = SavantMerger(ss.video_data_list, title)
+            await sm.download_videos(session)
+            sm.merge_videos()
+
+    asyncio.run(main())
