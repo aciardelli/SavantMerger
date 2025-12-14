@@ -1,6 +1,7 @@
 import os
 import subprocess
 from bs4 import BeautifulSoup
+from bs4.element import Tag, ResultSet
 import sys
 import argparse
 from typing import Optional, List
@@ -49,14 +50,14 @@ class VideoMetadata:
         'Date:': 'date'
     }
         
-    def get_video_data(self, soup):
+    def get_video_data(self, soup: BeautifulSoup) -> None:
         data_list = soup.find('div', class_='mod')
         if data_list:
             data_list_items = data_list.find_all('li')
             for data_list_item in data_list_items:
                 self.parse_data_list(data_list_item)
 
-    def parse_data_list(self, data_list_item):
+    def parse_data_list(self, data_list_item: Tag) -> None:
         strong_element = data_list_item.find('strong')
         if strong_element:
             description = strong_element.get_text(strip=True)
@@ -86,7 +87,7 @@ class SavantScraper:
         self.search_section_list = [] # all search sections loaded
         self.video_data_list = [] # video metadata
 
-    async def load_page(self, session, url):
+    async def load_page(self, session: aiohttp.ClientSession, url: str) -> Optional[BeautifulSoup]:
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 response.raise_for_status()
@@ -101,7 +102,7 @@ class SavantScraper:
             return None
                 
     # parses all search section rows
-    def parse_search_rows(self, rows):
+    def parse_search_rows(self, rows: ResultSet) -> None:
         for row in rows:
             player_id = row.get('data-player-id')
             month = row.get('data-month')
@@ -115,7 +116,7 @@ class SavantScraper:
             self.search_section_list.append(search_section)
 
     # compile url
-    def compile_url(self, url: str, savant_section: SearchSection):
+    def compile_url(self, url: str, savant_section: SearchSection) -> Optional[str]:
         video_details_url = url[:-8] + '&type=details'
         GROUP_BY_PARAMS = {
             ('name', 'team', 'venue'): f'&player_id={savant_section.player_id}',
@@ -134,7 +135,7 @@ class SavantScraper:
         return None
 
     # get url of each individual video page - mp4 needs to be grabbed from this url
-    async def get_video_page_urls(self, session):
+    async def get_video_page_urls(self, session: aiohttp.ClientSession) -> None:
         search_section_video_urls = []
         
         for search_section in self.search_section_list:
@@ -156,7 +157,7 @@ class SavantScraper:
                     self.video_data_list.append(VideoMetadata(video_page_url=video_url))
 
     # get all search sections on savant page and their individual video page urls
-    async def parse_savant_page(self, session):
+    async def parse_savant_page(self, session: aiohttp.ClientSession) -> None:
         logging.info("Loading BaseballSavant query...")
         soup = await self.load_page(session, self.url)
         if soup == None:
@@ -182,8 +183,8 @@ class SavantScraper:
         logging.info(f"Found {len(self.video_data_list)} video URLs")
 
     # asyncio to store multiple mp4 links
-    async def get_mp4_links(self, session):
-        async def fetch_mp4_link(session, video_data):
+    async def get_mp4_links(self, session: aiohttp.ClientSession) -> None:
+        async def fetch_mp4_link(session: aiohttp.ClientSession, video_data: VideoMetadata) -> bool:
             try:
                 video_page = video_data.video_page_url
                 soup = await self.load_page(session, video_page)
@@ -239,8 +240,8 @@ class SavantMerger:
         self.temp_files = []
 
     # download videos from mp4 links
-    async def download_videos(self, session):
-        async def download_video(session, i, video_data):
+    async def download_videos(self, session: aiohttp.ClientSession) -> None:
+        async def download_video(session: aiohttp.ClientSession, i: int, video_data: VideoMetadata) -> Optional[str]:
             temp_filename = f"temp_video_{i}.mp4"
             # logging.info("Downloading video:", i)
             try:
@@ -263,7 +264,7 @@ class SavantMerger:
         self.temp_files = [f for f in self.temp_files if f is not None]
 
     # merge downloaded videos
-    def merge_videos(self):
+    def merge_videos(self) -> None:
         logging.info("Merging videos...")
         try:
             filelist = 'filelist.txt'
@@ -297,7 +298,7 @@ class SavantMerger:
             if os.path.exists('filelist.txt'):
                 os.remove('filelist.txt')
 
-def check_url(url):
+def check_url(url: str) -> bool:
     if url.startswith('https://baseballsavant.mlb.com/statcast_search'):
         return True
     return False
